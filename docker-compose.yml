@@ -1,0 +1,15 @@
+services:
+  recruit_copilot_app:
+    build: .
+    container_name: recruit_copilot_container
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    networks:
+      - web-network
+    restart: always
+
+networks:
+  web-network:
+    external: true

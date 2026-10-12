@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from pypdf import PdfReader
-from ai_engine import analyze_cv_with_gemini
+from ai_engine import analyze_cv_with_gemini, get_available_models
 
 # Configuració de la pàgina
 st.set_page_config(
@@ -12,6 +12,26 @@ st.set_page_config(
 
 st.title("🎯 Recruit-Co-pilot: Filtre Intel·ligent de Candidats")
 st.markdown("Eina interna de suport per al departament de **Recursos Humans**.")
+
+# --- BARRA LATERAL (Configuració i Oferta) ---
+st.sidebar.header("⚙️ Configuració d'IA")
+
+# Advertència visible damunt del desplegable
+st.sidebar.warning(
+    "⚠️ **Recomanació:** Utilitza **gemini-3.5-flash** "
+    "per garantir una estabilitat total i compatibilitat amb el format JSON."
+)
+
+model_options = get_available_models()
+
+# Seleccionar per defecte "gemini-3.5-flash"
+default_index = 0
+for idx, model in enumerate(model_options):
+    if model == "gemini-3.5-flash":
+        default_index = idx
+        break
+
+selected_model = st.sidebar.selectbox("Selecciona el Model de Gemini", model_options, index=default_index)
 
 # Barra lateral per a l'oferta de feina
 st.sidebar.header("📋 1. Definició de l'Oferta")
@@ -50,7 +70,7 @@ if uploaded_files and job_description:
         status_text = st.empty()
         
         for i, file in enumerate(uploaded_files):
-            status_text.text(f"Processant ({i+1}/{total_files}): {file.name}...")
+            status_text.text(f"Processant ({i+1}/{total_files}): {file.name} amb el model `{selected_model}`...")
             
             try:
                 # Extreure text del PDF
@@ -61,8 +81,8 @@ if uploaded_files and job_description:
                     if extracted:
                         text += extracted + "\n"
                 
-                # Analitzar amb el motor de Gemini
-                analysis = analyze_cv_with_gemini(text, job_description)
+                # Analitzar amb el motor de Gemini passant el model triat
+                analysis = analyze_cv_with_gemini(text, job_description, model_name=selected_model)
                 
                 # Afegir metadades addicionals
                 analysis["Arxiu"] = file.name

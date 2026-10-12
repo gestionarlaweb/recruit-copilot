@@ -3,7 +3,6 @@ import json
 import google.generativeai as genai
 from dotenv import load_dotenv
 
-# Càrrega automàtica del fitxer .env local
 load_dotenv()
 
 def configure_gemini():
@@ -13,10 +12,20 @@ def configure_gemini():
         raise ValueError("No s'ha trobat la variable d'entorn GEMINI_API_KEY.")
     genai.configure(api_key=api_key)
 
-def analyze_cv_with_gemini(cv_text: str, job_description: str) -> dict:
+def get_available_models() -> list:
+    """Retorna la llista de models Flash estables optimitzats per a JSON."""
+    return [
+        "gemini-3.5-flash",
+        "gemini-2.5-flash",
+        "gemini-3.6-flash",
+        "gemini-3.7-flash",
+        "gemini-3.8-flash"
+    ]
+
+def analyze_cv_with_gemini(cv_text: str, job_description: str, model_name: str = "gemini-3.5-flash") -> dict:
     """
-    Analitza un currículum respecte a una oferta de feina utilitzant l'API de Gemini.
-    Retorna un diccionari amb les dades estructurades de l'avaluació.
+    Analitza un currículum respecte a una oferta de feina utilitzant l'API de Gemini
+    amb el model especificat per paràmetre.
     """
     configure_gemini()
     
@@ -38,12 +47,11 @@ def analyze_cv_with_gemini(cv_text: str, job_description: str) -> dict:
     - "resum_fitxa": Veredicte ràpid i professional per a l'entrevistador de RRHH
     """
     
-    model = genai.GenerativeModel(
-        model_name="gemini-3.5-flash",
-        generation_config={"response_mime_type": "application/json"}
-    )
-    
     try:
+        model = genai.GenerativeModel(
+            model_name=model_name,
+            generation_config={"response_mime_type": "application/json"}
+        )
         response = model.generate_content(prompt)
         return json.loads(response.text)
     except Exception as e:
@@ -51,6 +59,6 @@ def analyze_cv_with_gemini(cv_text: str, job_description: str) -> dict:
             "nom": "Error en analitzar",
             "puntuacio": 0,
             "punts_forts": "N/A",
-            "alertes": f"S'ha produït un error tècnic processant aquest CV: {str(e)}",
+            "alertes": f"S'ha produït un error tècnic amb el model {model_name}: {str(e)}",
             "resum_fitxa": "No s'ha pogut completar l'anàlisi automàtica."
         }
