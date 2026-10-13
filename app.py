@@ -18,8 +18,9 @@ st.sidebar.header("⚙️ Configuració d'IA")
 
 # Advertència visible damunt del desplegable
 st.sidebar.warning(
-    "⚠️ **Recomanació:** Utilitza **gemini-3.5-flash** "
+    "⚠️ **Recomanació:** Utilitza **gemini-3.8-flash** a data de 12/10/2026"
     "per garantir una estabilitat total i compatibilitat amb el format JSON."
+    "A tenir en compte que els models més nous poden oferir millores, però també poden introduir inestabilitat en la resposta JSON."
 )
 
 model_options = get_available_models()
