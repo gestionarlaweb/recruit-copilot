@@ -2,8 +2,39 @@ import os
 import json
 import google.generativeai as genai
 from dotenv import load_dotenv
+import time
+from google.api_core.exceptions import ResourceExhausted
 
 load_dotenv()
+
+import time
+from google.api_core.exceptions import ResourceExhausted
+
+def generar_amb_reintents(model, prompt_o_contents, max_intents=3, espera_inicial=4):
+    """
+    Realitza una crida a Gemini amb reintents automàtics si rep un error 429.
+    """
+    intent = 0
+    espera = espera_inicial
+
+    while intent < max_intents:
+        try:
+            # Crida al model de Gemini
+            response = model.generate_content(prompt_o_contents)
+            return response
+        except Exception as e:
+            # Comprovem si és un error 429 (Quota superada)
+            if "429" in str(e) or isinstance(e, ResourceExhausted):
+                intent += 1
+                if intent >= max_intents:
+                    raise RuntimeError(f"S'han esgotat els {max_intents} intents per quota superada (429): {e}")
+                
+                print(f"⚠️ Avís: Límit de quota superat (429). Reintentant en {espera} segons (Intent {intent}/{max_intents})...")
+                time.sleep(espera)
+                espera *= 2  # Dupliquem el temps d'espera (Backoff exponencial: 4s, 8s, 16s...)
+            else:
+                # Si és un altre tipus d'error (ex. clau invàlida, error 400), el llança directament
+                raise e
 
 def configure_gemini():
     """Configura el client de Google Generative AI amb la clau d'entorn."""
