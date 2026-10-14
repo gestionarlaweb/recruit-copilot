@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from pypdf import PdfReader
-from ai_engine import analyze_cv_with_gemini, get_available_models
+from ai_engine import analyze_cv_with_gemini, get_available_models, seleccionar_model_idoni
 
 # Configuració de la pàgina
 st.set_page_config(
@@ -16,25 +16,17 @@ st.markdown("Eina interna de suport per al departament de **Recursos Humans**.")
 # --- BARRA LATERAL (Configuració i Oferta) ---
 st.sidebar.header("⚙️ Configuració d'IA")
 
-# Advertència visible damunt del desplegable
-st.sidebar.warning(
-    "⚠️ **Recomanació:** Utilitza **gemini-3.8-flash** a data de 12/10/2026"
-    "per garantir una estabilitat total i compatibilitat amb el format JSON."
-    "A tenir en compte que els models més nous poden oferir millores, però també poden introduir inestabilitat en la resposta JSON."
+# Afegir l'opció automàtica al començament de la llista de models
+model_options = ["🤖 Automàtic (Segons complexitat)"] + get_available_models()
+
+selected_model = st.sidebar.selectbox(
+    "Selecciona el Model de Gemini", 
+    model_options, 
+    index=0,
+    help="Tria 'Automàtic' perquè el sistema triï el model idoni segons la mida i complexitat del CV."
 )
 
-model_options = get_available_models()
-
-# Seleccionar per defecte "gemini-3.5-flash"
-default_index = 0
-for idx, model in enumerate(model_options):
-    if model == "gemini-3.5-flash":
-        default_index = idx
-        break
-
-selected_model = st.sidebar.selectbox("Selecciona el Model de Gemini", model_options, index=default_index)
-
-# Barra lateral per a l'oferta de feina
+# Barra lateral per a l'oferta de feina (Totalment editable)
 st.sidebar.header("📋 1. Definició de l'Oferta")
 default_jd = """Buscant Desenvolupador/a de IA per a Empresa demo.
 Missió: Liderar l'automatització de processos de Recursos Humans amb IA generativa, agents i RAG.
@@ -47,7 +39,7 @@ Requisits:
 - Ubicació: Malgrat de Mar, Girona o rodalies / disponibilitat de desplaçament."""
 
 job_description = st.sidebar.text_area(
-    "Requisits i detalls de la plaça:",
+    "Requisits i detalls de la plaça (editable):",
     value=default_jd,
     height=300
 )
@@ -71,8 +63,6 @@ if uploaded_files and job_description:
         status_text = st.empty()
         
         for i, file in enumerate(uploaded_files):
-            status_text.text(f"Processant ({i+1}/{total_files}): {file.name} amb el model `{selected_model}`...")
-            
             try:
                 # Extreure text del PDF
                 reader = PdfReader(file)
@@ -82,11 +72,29 @@ if uploaded_files and job_description:
                     if extracted:
                         text += extracted + "\n"
                 
-                # Analitzar amb el motor de Gemini passant el model triat
-                analysis = analyze_cv_with_gemini(text, job_description, model_name=selected_model)
+                # Comprovació prèvia del model idoni si s'ha seleccionat Automàtic
+                if selected_model.startswith("🤖"):
+                    model_a_usar = seleccionar_model_idoni(text, job_description)
+                else:
+                    model_a_usar = selected_model
+                
+                status_text.text(f"Processant ({i+1}/{total_files}): {file.name} amb el model `{model_a_usar}`...")
+                
+                # Definim el comportament quan salti un avís de reintent 429
+                def mostrar_avis_reintent(missatge):
+                    status_text.warning(missatge)
+                
+                # Analitzar amb el motor de Gemini passant el callback i el model triat
+                analysis = analyze_cv_with_gemini(
+                    text, 
+                    job_description, 
+                    model_name=model_a_usar, 
+                    status_callback=mostrar_avis_reintent
+                )
                 
                 # Afegir metadades addicionals
                 analysis["Arxiu"] = file.name
+                analysis["Model_Utilitzat"] = model_a_usar
                 results.append(analysis)
                 
             except Exception as e:
@@ -96,7 +104,8 @@ if uploaded_files and job_description:
                     "punts_forts": "N/A",
                     "alertes": f"No s'ha pogut llegir el PDF: {str(e)}",
                     "resum_fitxa": "Error en l'extracció del document.",
-                    "Arxiu": file.name
+                    "Arxiu": file.name,
+                    "Model_Utilitzat": "N/A"
                 })
             
             progress_bar.progress((i + 1) / total_files)
@@ -108,7 +117,7 @@ if uploaded_files and job_description:
         df = pd.DataFrame(results)
         
         # Assegurar ordre de columnes
-        cols = ["nom", "puntuacio", "punts_forts", "alertes", "resum_fitxa", "Arxiu"]
+        cols = ["nom", "puntuacio", "punts_forts", "alertes", "resum_fitxa", "Model_Utilitzat", "Arxiu"]
         existing_cols = [c for c in cols if c in df.columns]
         df = df[existing_cols].sort_values(by="puntuacio", ascending=False).reset_index(drop=True)
         
@@ -124,6 +133,7 @@ if uploaded_files and job_description:
                 "punts_forts": "Punts Forts",
                 "alertes": "Bretxes / Alertes",
                 "resum_fitxa": "Veredicte RRHH",
+                "Model_Utilitzat": "Model IA",
                 "Arxiu": "Fitxer CV"
             }
         )
@@ -132,7 +142,7 @@ if uploaded_files and job_description:
         st.markdown("---")
         st.subheader("🔍 Detall Individual per Candidat")
         for idx, row in df.iterrows():
-            with st.expander(f"#{idx+1} - {row['nom']} (Puntuació: {row['puntuacio']}/10) - {row['Arxiu']}"):
+            with st.expander(f"#{idx+1} - {row['nom']} (Puntuació: {row['puntuacio']}/10) | Model: {row['Model_Utilitzat']} - {row['Arxiu']}"):
                 col1, col2 = st.columns(2)
                 with col1:
                     st.markdown(f"**💪 Punts Forts:**\n{row['punts_forts']}")
@@ -140,4 +150,4 @@ if uploaded_files and job_description:
                 with col2:
                     st.markdown(f"**📝 Veredicte per a l'Entrevistador:**\n{row['resum_fitxa']}")
 else:
-    st.info("💡 **Instruccions:** Revisa l'oferta de feina a la barra lateral i puja un o diversos CVs en PDF per començar l'anàlisi.")
+    st.info("💡 **Instruccions:** Personalitza els requisits de l'oferta a la barra lateral i puja un o diversos CVs en PDF per començar l'anàlisi.")
