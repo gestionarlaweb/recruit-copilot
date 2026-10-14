@@ -1,39 +1,50 @@
 import os
 import json
-import google.generativeai as genai
-from dotenv import load_dotenv
 import time
+from dotenv import load_dotenv
+import google.generativeai as genai
 from google.api_core.exceptions import ResourceExhausted
 
 load_dotenv()
 
-import time
-from google.api_core.exceptions import ResourceExhausted
-
-def generar_amb_reintents(model, prompt_o_contents, max_intents=3, espera_inicial=4):
+def seleccionar_model_idoni(text_cv: str, text_oferta: str) -> str:
     """
-    Realitza una crida a Gemini amb reintents automàtics si rep un error 429.
+    Avalua el volum de text per determinar quin model de Gemini és el més idoni.
+    """
+    longitud_total = len(text_cv) + len(text_oferta)
+    if longitud_total > 35000:
+        return "gemini-1.5-pro"
+    else:
+        return "gemini-3.5-flash"
+
+def generar_amb_reintents(model, prompt_o_contents, max_intents=3, espera_inicial=4, status_callback=None):
+    """
+    Realitza una crida a Gemini amb reintents automàtics si rep un error 429
+    i notifica a la interfície mitjançant el callback.
     """
     intent = 0
     espera = espera_inicial
 
     while intent < max_intents:
         try:
-            # Crida al model de Gemini
             response = model.generate_content(prompt_o_contents)
             return response
         except Exception as e:
-            # Comprovem si és un error 429 (Quota superada)
             if "429" in str(e) or isinstance(e, ResourceExhausted):
                 intent += 1
+                missatge = f"⚠️ Avís: Límit de quota superat (429). Reintentant en {espera} segons (Intent {intent}/{max_intents})..."
+                
                 if intent >= max_intents:
                     raise RuntimeError(f"S'han esgotat els {max_intents} intents per quota superada (429): {e}")
                 
-                print(f"⚠️ Avís: Límit de quota superat (429). Reintentant en {espera} segons (Intent {intent}/{max_intents})...")
+                # Imprimim a consola i si hi ha callback, l'executem a la web
+                print(missatge)
+                if status_callback:
+                    status_callback(missatge)
+                    
                 time.sleep(espera)
-                espera *= 2  # Dupliquem el temps d'espera (Backoff exponencial: 4s, 8s, 16s...)
+                espera *= 2
             else:
-                # Si és un altre tipus d'error (ex. clau invàlida, error 400), el llança directament
                 raise e
 
 def configure_gemini():
@@ -53,11 +64,7 @@ def get_available_models() -> list:
         "gemini-3.8-flash"
     ]
 
-def analyze_cv_with_gemini(cv_text: str, job_description: str, model_name: str = "gemini-3.5-flash") -> dict:
-    """
-    Analitza un currículum respecte a una oferta de feina utilitzant l'API de Gemini
-    amb el model especificat per paràmetre.
-    """
+def analyze_cv_with_gemini(cv_text: str, job_description: str, model_name: str = "gemini-3.5-flash", status_callback=None) -> dict:
     configure_gemini()
     
     prompt = f"""
@@ -83,7 +90,10 @@ def analyze_cv_with_gemini(cv_text: str, job_description: str, model_name: str =
             model_name=model_name,
             generation_config={"response_mime_type": "application/json"}
         )
-        response = model.generate_content(prompt)
+        
+        # Passem el callback cap a la funció de reintents
+        response = generar_amb_reintents(model, prompt, status_callback=status_callback)
+        
         return json.loads(response.text)
     except Exception as e:
         return {
